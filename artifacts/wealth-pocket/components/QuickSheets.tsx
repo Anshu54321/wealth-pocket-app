@@ -11,42 +11,35 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { REVIEW_CHOICES, categoriesFor, categoryIcon } from '@/constants/categories';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useColors } from '@/hooks/useColors';
 import type { TransactionInput, TransactionKind, TransactionRecord } from '@/lib/database';
-import { ActionButton, Tag, categoryIcon, toMinor } from './finance-ui';
-
-const expenseCategories = [
-  'Food & dining', 'Groceries', 'Transport', 'Bills', 'Shopping', 'Health', 'Entertainment', 'Other',
-];
-const incomeCategories = ['Salary', 'Business', 'Interest', 'Lending', 'Other income'];
-const investmentBuckets = ['Mutual funds', 'Insurance', 'Stocks', 'Emergency fund', 'Other'];
+import { ActionButton, Tag, toMinor } from './finance-ui';
 
 export function QuickAddSheet({
   visible,
   onClose,
   onSave,
+  initialKind = 'expense',
 }: {
   visible: boolean;
   onClose: () => void;
   onSave: (input: TransactionInput) => Promise<void>;
+  initialKind?: TransactionKind;
 }) {
   const colors = useColors();
-  const [kind, setKind] = useState<TransactionKind>('expense');
+  const [kind, setKind] = useState<TransactionKind>(initialKind);
   const [amount, setAmount] = useState('');
   const [merchant, setMerchant] = useState('');
-  const [category, setCategory] = useState(expenseCategories[0] ?? 'Other');
+  const [category, setCategory] = useState(() => categoriesFor(initialKind)[0]?.name ?? 'Other');
   const [provider, setProvider] = useState('');
   const [saving, setSaving] = useState(false);
-  const categories = useMemo(
-    () => kind === 'expense' ? expenseCategories : kind === 'income' ? incomeCategories : investmentBuckets,
-    [kind],
-  );
+  const categories = useMemo(() => categoriesFor(kind), [kind]);
 
   const changeKind = (nextKind: TransactionKind) => {
     setKind(nextKind);
-    const nextCategories = nextKind === 'expense' ? expenseCategories : nextKind === 'income' ? incomeCategories : investmentBuckets;
-    setCategory(nextCategories[0] ?? 'Other');
+    setCategory(categoriesFor(nextKind)[0]?.name ?? 'Other');
   };
 
   const save = async () => {
@@ -156,7 +149,14 @@ export function QuickAddSheet({
           </Text>
           <View style={styles.tagWrap}>
             {categories.map((item) => (
-              <Tag key={item} icon={categoryIcon(item)} selected={category === item} onPress={() => setCategory(item)}>{item}</Tag>
+              <Tag
+                key={item.name}
+                icon={item.icon}
+                selected={category === item.name}
+                onPress={() => setCategory(item.name)}
+              >
+                {item.name}
+              </Tag>
             ))}
           </View>
 
@@ -193,7 +193,7 @@ export function CategoryReviewSheet({
   onCategorize: (id: string, category: string) => Promise<void>;
 }) {
   const colors = useColors();
-  const choices = ['Food & dining', 'Groceries', 'Transport', 'Bills', 'Shopping', 'Health', 'Other'];
+  const choices = REVIEW_CHOICES;
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   return (
@@ -227,10 +227,11 @@ export function CategoryReviewSheet({
                   </Text>
                 </View>
                 <View style={styles.reviewChoices}>
-                  {choices.slice(0, 4).map((choice) => (
+                  {choices.map((choice) => (
                     <Pressable
                       key={choice}
                       accessibilityRole="button"
+                      accessibilityLabel={`Set ${transaction.merchant} to ${choice}`}
                       disabled={updatingId === transaction.id}
                       onPress={async () => {
                         setUpdatingId(transaction.id);
@@ -246,22 +247,6 @@ export function CategoryReviewSheet({
                       <Text style={[styles.reviewChoiceText, { color: colors.foreground }]}>{choice}</Text>
                     </Pressable>
                   ))}
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={updatingId === transaction.id}
-                    onPress={async () => {
-                      setUpdatingId(transaction.id);
-                      try {
-                        await onCategorize(transaction.id, 'Other');
-                      } finally {
-                        setUpdatingId(null);
-                      }
-                    }}
-                    style={[styles.reviewChoice, { backgroundColor: colors.secondary }]}
-                  >
-                    <Feather name={categoryIcon('Other')} size={12} color={colors.primary} />
-                    <Text style={[styles.reviewChoiceText, { color: colors.foreground }]}>Other</Text>
-                  </Pressable>
                 </View>
               </View>
             ))}

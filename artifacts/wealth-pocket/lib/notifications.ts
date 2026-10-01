@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import type { DebtRecord } from './database';
 
 const REMINDERS_ENABLED = 'mira.reminders.enabled.v1';
+export const FINANCE_REMINDER_CHANNEL = 'finance-reminders';
 export const TRANSACTION_REVIEW_CATEGORY = 'MIRA_TRANSACTION_REVIEW';
 export const REVIEW_ACTION_CATEGORIES: Record<string, string> = {
   'category-food': 'Food & dining',
@@ -33,6 +34,7 @@ export async function registerFinanceNotificationActions(): Promise<void> {
 }
 
 export async function getReminderPermission(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
   const permissions = await Notifications.getPermissionsAsync();
   return permissions.granted;
 }
@@ -43,27 +45,33 @@ export async function getReminderPreference(): Promise<boolean> {
 
 export async function setReminderPreference(enabled: boolean): Promise<void> {
   await AsyncStorage.setItem(REMINDERS_ENABLED, String(enabled));
-  if (!enabled) await Notifications.cancelAllScheduledNotificationsAsync();
+  // The preference itself is platform independent and still persisted on web,
+  // but there is nothing scheduled to cancel where notifications do not exist.
+  // `cancelAllScheduledNotificationsAsync` is one of the calls expo-notifications
+  // refuses to run in a browser.
+  if (!enabled && Platform.OS !== 'web') await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
 export async function requestReminderPermission(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
   const requested = await Notifications.requestPermissionsAsync();
   if (!requested.granted) return false;
 
-  if (process.env.EXPO_OS === 'android') {
-    await Notifications.setNotificationChannelAsync('finance-reminders', {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync(FINANCE_REMINDER_CHANNEL, {
       name: 'Finance reminders',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 180, 120, 180],
-      lightColor: '#3AD5C6',
+      lightColor: '#34E5A6',
     });
   }
   return true;
 }
 
 export async function scheduleDebtReminder(debt: DebtRecord): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
   if (debt.status !== 'active' || debt.dueAt < Date.now()) return null;
   if (!(await getReminderPreference())) return null;
   if (!(await getReminderPermission())) return null;
@@ -81,12 +89,13 @@ export async function scheduleDebtReminder(debt: DebtRecord): Promise<string | n
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: due,
-      channelId: 'finance-reminders',
+      channelId: FINANCE_REMINDER_CHANNEL,
     },
   });
 }
 
 export async function cancelReminder(identifier: string | null): Promise<void> {
+  if (Platform.OS === 'web') return;
   if (identifier) await Notifications.cancelScheduledNotificationAsync(identifier);
 }
 
@@ -97,6 +106,7 @@ export async function clearFinanceNotifications(): Promise<void> {
 }
 
 export async function notifyPendingCategories(count: number, transactionId: string | null): Promise<void> {
+  if (Platform.OS === 'web') return;
   if (count <= 0 || !transactionId || !(await getReminderPreference()) || !(await getReminderPermission())) return;
   await Notifications.scheduleNotificationAsync({
     content: {

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Platform, StyleSheet, useColorScheme, View } from 'react-native';
+import { Platform, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
+import { useFinance } from '@/context/FinanceContext';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
@@ -13,6 +14,8 @@ import { SymbolView } from 'expo-symbols';
 // is a system-level appearance provided by iOS and cannot be overridden.
 // Custom brand colors are applied only on the ClassicTabLayout path (older iOS / Android / web).
 function NativeTabLayout() {
+  const colors = useColors();
+  const { unreadNotificationCount } = useFinance();
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
@@ -20,6 +23,20 @@ function NativeTabLayout() {
           sf={{ default: 'house', selected: 'house.fill' }}
         />
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="notifications">
+        <NativeTabs.Trigger.Icon sf={{ default: 'bell', selected: 'bell.fill' }} />
+        <NativeTabs.Trigger.Label>Alerts</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Badge
+          hidden={unreadNotificationCount === 0}
+          selectedBackgroundColor={colors.primary}
+        >
+          {unreadNotificationCount > 99 ? '99+' : String(unreadNotificationCount)}
+        </NativeTabs.Trigger.Badge>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="segregated">
+        <NativeTabs.Trigger.Icon sf={{ default: 'rectangle.split.3x1', selected: 'rectangle.split.3x1.fill' }} />
+        <NativeTabs.Trigger.Label>Split</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="calendar">
         <NativeTabs.Trigger.Icon sf={{ default: 'calendar', selected: 'calendar' }} />
@@ -47,6 +64,7 @@ function ClassicTabLayout() {
   const isDark = colorScheme === 'dark';
   const isIOS = Platform.OS === 'ios';
   const isWeb = Platform.OS === 'web';
+  const { unreadNotificationCount } = useFinance();
 
   return (
     <Tabs
@@ -88,6 +106,28 @@ function ClassicTabLayout() {
           tabBarIcon: ({ color, focused }) => isIOS
             ? <SymbolView name={focused ? 'house.fill' : 'house'} tintColor={color} size={22} />
             : <Feather name="home" size={20} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: 'Alerts',
+          tabBarBadge: unreadNotificationCount > 0
+            ? (unreadNotificationCount > 99 ? '99+' : unreadNotificationCount)
+            : undefined,
+          tabBarBadgeStyle: { backgroundColor: colors.primary, color: colors.primaryForeground, fontSize: 10 },
+          tabBarIcon: ({ color, focused }) => isIOS
+            ? <SymbolView name={focused ? 'bell.fill' : 'bell'} tintColor={color} size={22} />
+            : <Feather name="bell" size={20} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="segregated"
+        options={{
+          title: 'Split',
+          tabBarIcon: ({ color, focused }) => isIOS
+            ? <SymbolView name={focused ? 'arrow.up.arrow.down.square.fill' : 'arrow.up.arrow.down.square'} tintColor={color} size={22} />
+            : <Feather name="layers" size={20} color={color} />,
         }}
       />
       <Tabs.Screen

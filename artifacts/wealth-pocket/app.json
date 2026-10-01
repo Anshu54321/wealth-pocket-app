@@ -6,7 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "wealth-pocket",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F3F7FB",
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
@@ -16,7 +17,8 @@
     "android": {
       "permissions": [
         "android.permission.USE_BIOMETRIC",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.READ_SMS"
       ]
     },
     "web": {
@@ -26,7 +28,7 @@
       "expo-router",
       ["expo-sqlite", { "useSQLCipher": true }],
       "expo-secure-store",
-      ["expo-notifications", { "color": "#3AD5C6" }]
+      ["expo-notifications", { "color": "#00C08B" }]
     ],
     "experiments": {
       "typedRoutes": true,

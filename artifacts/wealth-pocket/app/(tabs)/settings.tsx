@@ -33,6 +33,14 @@ import {
   requestReminderPermission,
   setReminderPreference,
 } from '@/lib/notifications';
+import {
+  getSmsPermission,
+  isSmsPlatformSupported,
+  isSmsSyncEnabled,
+  requestSmsPermission,
+  setSmsSyncEnabled,
+  type SmsPermissionState,
+} from '@/lib/sms';
 
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
 const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
@@ -40,16 +48,26 @@ const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
 export default function SettingsScreen() {
   const colors = useColors();
-  const { transactions, debts, scheduleActiveDebtReminders, importTransactions, deleteAllData } = useFinance();
+  const { transactions, debts, scheduleActiveDebtReminders, importTransactions, deleteAllData, loadDemoData, isDemoData } = useFinance();
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleExpiry, setGoogleExpiry] = useState(0);
+  /**
+   * Fakes the connected state so the post-auth UI can be previewed without
+   * registering a Google Cloud client. It never writes a token to SecureStore,
+   * so `readGmailToken()` still reports "not connected" on reload.
+   */
+  const [googlePreview, setGooglePreview] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [biometrics, setBiometrics] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationsGranted, setNotificationsGranted] = useState(false);
+  const [smsSyncEnabled, setSmsSyncEnabledState] = useState(false);
+  const [smsPermission, setSmsPermission] = useState<SmsPermissionState>('unavailable');
   const currentClientId =
     Platform.OS === 'ios' ? iosClientId : Platform.OS === 'android' ? androidClientId : webClientId;
   const needsOAuthSetup = !currentClientId;
+  const showConnectedState = googleConnected || googlePreview;
 
   useEffect(() => {
     let mounted = true;
@@ -58,13 +76,17 @@ export default function SettingsScreen() {
       getBiometricEnabled().catch(() => false),
       getReminderPreference().catch(() => false),
       getReminderPermission().catch(() => false),
-    ]).then(([token, biometric, reminderEnabled, permission]) => {
+      isSmsSyncEnabled().catch(() => false),
+      getSmsPermission().catch((): SmsPermissionState => 'unavailable'),
+    ]).then(([token, biometric, reminderEnabled, permission, smsEnabled, smsPermissionState]) => {
       if (!mounted) return;
       setGoogleConnected(!!token);
       setGoogleExpiry(token?.expiresAt ?? 0);
       setBiometrics(biometric);
       setNotificationsEnabled(reminderEnabled);
       setNotificationsGranted(permission);
+      setSmsSyncEnabledState(smsEnabled);
+      setSmsPermission(smsPermissionState);
     });
     return () => { mounted = false; };
   }, []);
@@ -78,7 +100,56 @@ export default function SettingsScreen() {
     ],
   );
 
+  const runDemoSync = async () => {
+    // Preview-only sync: seeds the sample ledger and reports the same result
+    // shape a real import would, so the sync UI and the resulting Alerts entry
+    // can be reviewed without a Gmail account.
+    setSyncing(true);
+    try {
+      await loadDemoData();
+      Alert.alert(
+        'Preview sync complete',
+        'Sample transactions were loaded. This did not contact Google, and no access token was created.',
+      );
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const toggleDemo = () => {
+    setGooglePreview((value) => {
+      const next = !value;
+      if (!next) setGoogleExpiry(0);
+      return next;
+    });
+  };
+
+  const confirmLoadDemo = () => Alert.alert(
+    'Replace all data with sample data?',
+    'This deletes your current transactions, lending records, and alerts, then fills the app with six months of realistic sample data so every screen and animation can be reviewed.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Load sample data',
+        onPress: () => void (async () => {
+          setSeeding(true);
+          try {
+            await loadDemoData();
+          } catch (error) {
+            Alert.alert('Could not load sample data', error instanceof Error ? error.message : 'Try again from Settings.');
+          } finally {
+            setSeeding(false);
+          }
+        })(),
+      },
+    ],
+  );
+
   const syncGmail = async () => {
+    if (googlePreview && !googleConnected) {
+      await runDemoSync();
+      return;
+    }
     const stored = await readGmailToken().catch(() => null);
     if (!stored || stored.expiresAt <= Date.now() + 30_000) {
       Alert.alert('Reconnect Google', 'Your read-only Gmail access has expired. Connect again to continue syncing.');
@@ -145,6 +216,42 @@ export default function SettingsScreen() {
     setNotificationsEnabled(true);
   };
 
+  const toggleSmsSync = async (value: boolean) => {
+    if (!value) {
+      await setSmsSyncEnabled(false);
+      setSmsSyncEnabledState(false);
+      return;
+    }
+    // The opt-in is stored first and revoked on any failure, so the stored
+    // preference never claims more than the OS has actually granted.
+    if (!isSmsPlatformSupported()) {
+      Alert.alert('Android only', 'Reading bank messages works on Android devices. Nothing is stored.');
+      return;
+    }
+    const state = await requestSmsPermission();
+    setSmsPermission(state);
+    if (state !== 'granted') {
+      await setSmsSyncEnabled(false);
+      setSmsSyncEnabledState(false);
+      Alert.alert(
+        state === 'blocked' ? 'Permission blocked' : 'Permission not granted',
+        state === 'blocked'
+          ? 'Open this app\'s settings in Android to allow message access, then come back and turn this on again.'
+          : 'Mira cannot read bank messages without this permission, so SMS sync stays off.',
+      );
+      return;
+    }
+    await setSmsSyncEnabled(true);
+    setSmsSyncEnabledState(true);
+  };
+
+  const openSmsPermissionSettings = () => {
+    if (Platform.OS === 'web') return;
+    void Linking.openSettings().catch(() =>
+      Alert.alert('Settings unavailable', 'Open this app\'s permissions in your device settings and allow messages.'),
+    );
+  };
+
   const exportLedger = async () => {
     const rows = [
       'Date,Type,Merchant,Category,Amount INR',
@@ -205,20 +312,35 @@ export default function SettingsScreen() {
               {googleConnected && googleExpiry > Date.now() ? 'Read-only connection active' : 'Connect your own Google account'}
             </Text>
           </View>
-          {googleConnected ? <View style={[styles.statusDot, { backgroundColor: colors.positive }]} /> : null}
+          {showConnectedState ? <View style={[styles.statusDot, { backgroundColor: colors.positive }]} /> : null}
         </View>
+        {googlePreview && !googleConnected ? (
+          <View style={[styles.previewBanner, { backgroundColor: colors.subtleGreen, borderColor: colors.primary }]}>
+            <Feather name="eye" size={13} color={colors.primary} />
+            <Text style={[styles.previewBannerText, { color: colors.primary }]}>
+              Preview mode. Showing the connected UI with sample data. No Google account is linked and no token is stored.
+            </Text>
+          </View>
+        ) : null}
         <Text style={[styles.privacyCopy, { color: colors.mutedForeground }]}>
           Google will show its consent screen for Gmail read-only access. Mira scans recent messages on request, keeps transaction details on this device, and does not save raw email text or send mail.
         </Text>
-        {googleConnected ? (
+        {showConnectedState ? (
           <View style={styles.googleActions}>
-            <ActionButton title="Sync recent alerts" icon="refresh-cw" onPress={() => void syncGmail()} loading={syncing} testID="sync-gmail" style={{ flex: 1 }} />
+            <ActionButton
+              title={googlePreview && !googleConnected ? 'Preview sync (sample data)' : 'Sync recent alerts'}
+              icon="refresh-cw"
+              onPress={() => void syncGmail()}
+              loading={syncing}
+              testID="sync-gmail"
+              style={{ flex: 1 }}
+            />
             <Pressable
               accessibilityRole="button"
               testID="disconnect-google"
               onPress={() => Alert.alert('Disconnect Google?', 'This removes Mira’s saved Google access token. Imported transactions stay in your local ledger.', [
                 { text: 'Cancel', style: 'cancel' },
-                { text: 'Disconnect', style: 'destructive', onPress: () => void forgetGmailToken().then(() => { setGoogleConnected(false); setGoogleExpiry(0); }) },
+                { text: 'Disconnect', style: 'destructive', onPress: () => void forgetGmailToken().then(() => { setGoogleConnected(false); setGoogleExpiry(0); setGooglePreview(false); }) },
               ])}
               style={({ pressed }) => [styles.disconnectButton, { borderColor: colors.border, opacity: pressed ? 0.65 : 1 }]}
             >
@@ -226,17 +348,23 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
         ) : needsOAuthSetup ? (
-          <ActionButton
-            title="Set up Google OAuth"
-            icon="arrow-up-right"
-            onPress={connectGoogle}
-            testID="connect-google"
-          />
+          <>
+            <ActionButton
+              title="Set up Google OAuth"
+              icon="arrow-up-right"
+              onPress={connectGoogle}
+              testID="connect-google"
+            />
+            <Text style={[styles.previewHint, { color: colors.mutedForeground }]}>
+              Want to see the connected state first? Turn on preview mode below.
+            </Text>
+          </>
         ) : (
           <GoogleAuthButton
             clientId={currentClientId}
             onConnected={(expiresAt) => {
               setGoogleConnected(true);
+              setGooglePreview(false);
               setGoogleExpiry(expiresAt);
             }}
           />
@@ -245,6 +373,102 @@ export default function SettingsScreen() {
           <Feather name="lock" size={13} color={colors.primary} />
           <Text style={[styles.scopeText, { color: colors.mutedForeground }]}>Scope: gmail.readonly · Sync is manual · Last 30 days</Text>
         </View>
+        <View style={[styles.preferenceDivider, { backgroundColor: colors.border }]} />
+        <PreferenceRow
+          icon="eye"
+          title="Preview connected state"
+          description="Shows the post-authentication UI using sample data. Stores no token and never contacts Google."
+          value={googlePreview}
+          onValueChange={toggleDemo}
+        />
+      </Panel>
+
+      <SectionTitle title="Automatic tracking" />
+      <Panel style={styles.smsPanel}>
+        <View style={styles.connectionHeader}>
+          <View style={[styles.googleMark, { backgroundColor: colors.secondary }]}>
+            <Feather name="message-square" size={18} color={colors.accent} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.cardTitle, { color: colors.foreground }]}>Bank messages</Text>
+            <Text style={[styles.cardSubtitle, { color: colors.mutedForeground }]}>
+              {smsSyncEnabled && smsPermission === 'granted'
+                ? 'Mira can log spending and income for you'
+                : 'Turn on to log transactions from bank SMS'}
+            </Text>
+          </View>
+          {smsSyncEnabled && smsPermission === 'granted'
+            ? <View style={[styles.statusDot, { backgroundColor: colors.positive }]} />
+            : null}
+        </View>
+        <Text style={[styles.privacyCopy, { color: colors.mutedForeground }]}>
+          Android asks you to allow message access the first time you switch this on. Mira reads the last 30 messages only when you tap Sync, keeps the amount, merchant, and direction on this device, and never stores or uploads the message text.
+        </Text>
+        <PreferenceRow
+          icon="message-square"
+          title="Allow SMS Sync for Auto-Tracking"
+          description={
+            smsPermission === 'unavailable'
+              ? 'Reading bank messages is available on Android devices.'
+              : smsPermission === 'blocked'
+                ? 'Android stopped asking. Only the system settings screen can restore message access.'
+                : smsSyncEnabled && smsPermission !== 'granted'
+                  ? 'Message access was withdrawn outside Mira. Turn this off and on again to re-grant.'
+                  : 'Read bank SMS on demand to add income and expenses automatically.'
+          }
+          value={smsSyncEnabled}
+          onValueChange={(value) => void toggleSmsSync(value)}
+        />
+        {/*
+          `PermissionsAndroid.check` reports a boolean and cannot tell "denied"
+          from "don't ask again", so a block is only visible as a false check.
+          Offering the settings shortcut whenever the opt-in and the grant have
+          drifted apart covers both, which is the only state where the user
+          cannot recover by tapping the toggle again.
+        */}
+        {smsSyncEnabled && smsPermission !== 'granted' && smsPermission !== 'unavailable' ? (
+          <>
+            <View style={[styles.previewBanner, { backgroundColor: colors.subtleGreen, borderColor: colors.primary }]}>
+              <Feather name="lock" size={13} color={colors.primary} />
+              <Text style={[styles.previewBannerText, { color: colors.primary }]}>
+                Mira no longer has message access, so SMS sync cannot run. Restore it in Android settings.
+              </Text>
+            </View>
+            <ActionButton
+              title="Open app settings"
+              icon="settings"
+              onPress={openSmsPermissionSettings}
+              testID="open-sms-settings"
+            />
+          </>
+        ) : null}
+        <View style={styles.scopeRow}>
+          <Feather name="shield" size={13} color={colors.primary} />
+          <Text style={[styles.scopeText, { color: colors.mutedForeground }]}>Manual sync only · Android only · Nothing leaves this device</Text>
+        </View>
+      </Panel>
+
+      <SectionTitle title="Sample data" />
+      <Panel style={styles.demoPanel}>
+        {isDemoData ? (
+          <View style={[styles.demoBanner, { backgroundColor: colors.subtleGreen, borderColor: colors.primary }]}>
+            <Feather name="info" size={13} color={colors.primary} />
+            <Text style={[styles.demoBannerText, { color: colors.primary }]}>
+              The ledger currently holds sample data, not real transactions.
+            </Text>
+          </View>
+        ) : null}
+        <Text style={[styles.privacyCopy, { color: colors.mutedForeground }]}>
+          Fills the app with six months of realistic transactions, investments, loans, and alerts so every screen, chart, and animation has something to render.
+        </Text>
+        <ActionButton
+          title={isDemoData ? 'Reload sample data' : 'Load sample data'}
+          icon="database"
+          onPress={confirmLoadDemo}
+          loading={seeding}
+          testID="load-demo-data"
+        />
+        <ActionButton title="Clear all data" icon="trash-2" secondary onPress={confirmDelete} />
       </Panel>
 
       <SectionTitle title="Device protection" />
@@ -278,6 +502,7 @@ export default function SettingsScreen() {
         <SecurityPoint icon="smartphone" title="Local-first ledger" text="Transactions, investments, and lending records stay in the app’s local SQLite database. Native release builds enable SQLCipher encryption." />
         <SecurityPoint icon="key" title="Secure credentials" text="Google access tokens and the database encryption key are stored in iOS Keychain or Android Keystore." />
         <SecurityPoint icon="eye-off" title="No email archive" text="Gmail message bodies are parsed in memory and discarded. Only transaction fields are retained." />
+        <SecurityPoint icon="lock" title="No message archive" text="Bank SMS is read on demand, parsed on device, and discarded. Repeats are dropped using a stored fingerprint of the amount, date, and merchant, never the original text." />
         <SecurityPoint icon="alert-triangle" title="Preview security" text="Expo Go and web previews do not provide SQLCipher database encryption. Do not use real financial records in a development preview." />
       </Panel>
       <Text style={[styles.versionLabel, { color: colors.mutedForeground }]}>MIRA · PERSONAL FINANCE · INR</Text>
@@ -432,6 +657,7 @@ function SecurityPoint({ icon, title, text }: { icon: keyof typeof Feather.glyph
 
 const styles = StyleSheet.create({
   googlePanel: { gap: 13 },
+  smsPanel: { gap: 13 },
   connectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   googleMark: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   cardTitle: { fontSize: 13, fontWeight: '700' },
@@ -442,6 +668,12 @@ const styles = StyleSheet.create({
   disconnectButton: { width: 48, height: 48, borderWidth: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   scopeRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   scopeText: { fontSize: 9 },
+  previewHint: { fontSize: 10, lineHeight: 15, textAlign: 'center' },
+  previewBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderWidth: 1, borderRadius: 14, padding: 11 },
+  previewBannerText: { flex: 1, fontSize: 10, lineHeight: 15, fontWeight: '600' },
+  demoPanel: { gap: 13 },
+  demoBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, padding: 11 },
+  demoBannerText: { flex: 1, fontSize: 10, lineHeight: 15, fontWeight: '600' },
   preferencePanel: { paddingHorizontal: 15, paddingVertical: 4 },
   preferenceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14 },
   preferenceIcon: { width: 35, height: 35, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },

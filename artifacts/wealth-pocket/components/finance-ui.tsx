@@ -8,11 +8,136 @@ import {
   Text,
   View,
   type PressableProps,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { categoryIcon } from '@/constants/categories';
 import { useColors } from '@/hooks/useColors';
 import type { TransactionRecord } from '@/lib/database';
+
+export { categoryIcon };
+
+/**
+ * Maps an index to one of the vivid accent gradients in the active palette.
+ * Callers pass a stable index (e.g. category position) so a given category keeps
+ * its colour across screens and rebuilds.
+ */
+export function accentGradient(colors: ReturnType<typeof useColors>, index: number) {
+  return colors.accentGradients[Math.abs(index) % colors.accentGradients.length];
+}
+
+export function accentColor(colors: ReturnType<typeof useColors>, index: number) {
+  return colors.chartColors[Math.abs(index) % colors.chartColors.length];
+}
+
+/**
+ * A rounded gradient card with a specular highlight across the top third.
+ *
+ * The sheen is a separate absolutely-positioned overlay rather than a second
+ * gradient stop on the fill: that keeps the highlight's falloff independent of
+ * the brand gradient, so swapping `colors.gloss` does not disturb the gloss.
+ */
+export function GlossPanel({
+  children,
+  style,
+  intensity = 'soft',
+  accentIndex,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  /** `solid` flattens the fill to a plain surface, for dense list containers. */
+  intensity?: 'soft' | 'solid' | 'vivid';
+  /** When set, fills with the accent gradient instead of the neutral gloss. */
+  accentIndex?: number;
+}) {
+  const colors = useColors();
+  const gradient =
+    intensity === 'vivid' && accentIndex !== undefined
+      ? accentGradient(colors, accentIndex)
+      : intensity === 'vivid'
+        ? colors.glossStrong
+        : colors.gloss;
+  const flat = intensity === 'solid';
+  return (
+    <View
+      style={[
+        styles.glossPanel,
+        { borderColor: colors.glassBorder, shadowColor: colors.shadow },
+        flat ? { backgroundColor: colors.card, shadowOpacity: 0.04 } : null,
+        style,
+      ]}
+    >
+      <LinearGradient
+        colors={flat ? [colors.card, colors.card] : gradient}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      {flat ? null : (
+        <LinearGradient
+          colors={[colors.sheen, 'transparent', 'transparent']}
+          locations={[0, 0.42, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, styles.glossSheen]}
+        />
+      )}
+      {children}
+    </View>
+  );
+}
+
+/** Translucent pill used for chips, filters, and inline legends. */
+export function GlossChip({
+  children,
+  accentIndex,
+  icon,
+  selected = false,
+}: {
+  children: ReactNode;
+  accentIndex?: number;
+  icon?: keyof typeof Feather.glyphMap;
+  selected?: boolean;
+}) {
+  const colors = useColors();
+  const tint = accentIndex === undefined ? colors.primary : accentColor(colors, accentIndex);
+  return (
+    <View
+      style={[
+        styles.glossChip,
+        {
+          backgroundColor: selected ? colors.card : colors.glass,
+          borderColor: selected ? tint : colors.glassBorder,
+        },
+      ]}
+    >
+      {icon ? <Feather name={icon} size={12} color={tint} /> : null}
+      <Text style={[styles.glossChipText, { color: selected ? colors.foreground : colors.mutedForeground }]}>
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+/** Large figure with a gradient fill, used for hero totals. */
+export function GradientText({ text, size = 30, style }: { text: string; size?: number; style?: object }) {
+  const colors = useColors();
+  return (
+    <Text
+      style={[
+        styles.gradientText,
+        { fontSize: size, lineHeight: size * 1.16, color: colors.primary },
+        style,
+      ]}
+    >
+      {text}
+    </Text>
+  );
+}
 
 export function money(minor: number, compact = false): string {
   const amount = minor / 100;
@@ -38,20 +163,7 @@ export function shortDate(timestamp: number): string {
   return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short' }).format(timestamp);
 }
 
-export function categoryIcon(category: string): keyof typeof Feather.glyphMap {
-  const key = category.toLowerCase();
-  if (/food|dining|restaurant|cafe|coffee/.test(key)) return 'coffee';
-  if (/grocer|supermarket/.test(key)) return 'shopping-cart';
-  if (/transport|travel|fuel|taxi|rideshare|flight/.test(key)) return 'truck';
-  if (/bill|utility|rent|housing|internet|electric|water/.test(key)) return 'file-text';
-  if (/shop|retail/.test(key)) return 'shopping-bag';
-  if (/health|medical|pharmacy|doctor/.test(key)) return 'heart';
-  if (/entertain|movie|cinema|music|streaming/.test(key)) return 'film';
-  if (/education|course|school|book/.test(key)) return 'book-open';
-  if (/income|salary|business|interest|lending|repayment|refund/.test(key)) return 'arrow-down-left';
-  if (/invest|mutual|stock|insurance|emergency|sip/.test(key)) return 'trending-up';
-  return 'tag';
-}
+
 
 export function Page({
   title,
@@ -67,7 +179,13 @@ export function Page({
   const colors = useColors();
   const insets = useSafeAreaInsets();
   return (
-    <View className="flex-1" style={{ flex: 1, backgroundColor: colors.background }}>
+    <View className="flex-1" style={styles.page}>
+      <LinearGradient
+        colors={colors.backgroundGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.6, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
@@ -91,12 +209,12 @@ export function Page({
   );
 }
 
-export function Panel({ children, style }: { children: ReactNode; style?: object }) {
+export function Panel({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const colors = useColors();
   return (
-    <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }, style]}>
+    <GlossPanel style={[styles.panel, style]}>
       {children}
-    </View>
+    </GlossPanel>
   );
 }
 
@@ -209,8 +327,8 @@ export function Tag({
       style={[
         styles.tag,
         {
-          backgroundColor: selected ? colors.subtleGreen : colors.secondary,
-          borderColor: selected ? colors.primary : colors.border,
+          backgroundColor: selected ? colors.subtleGreen : colors.glass,
+          borderColor: selected ? colors.primary : colors.glassBorder,
         },
       ]}
     >
@@ -303,7 +421,9 @@ const styles = StyleSheet.create({
   headerText: { flex: 1, gap: 4 },
   title: { fontSize: 26, fontWeight: '700', letterSpacing: -0.8 },
   subtitle: { fontSize: 13, lineHeight: 18 },
-  panel: { borderRadius: 24, borderWidth: StyleSheet.hairlineWidth, padding: 18, marginBottom: 14 },
+  // Geometry lives on glossPanel; Panel only overrides it where a screen needs
+  // a flatter or tighter card.
+  panel: {},
   sectionTitle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, marginBottom: 12 },
   sectionText: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3 },
   iconButton: { justifyContent: 'center', alignItems: 'center' },
@@ -324,4 +444,30 @@ const styles = StyleSheet.create({
   labeledValue: { gap: 5 },
   labeledValueLabel: { fontSize: 11 },
   labeledValueText: { fontSize: 13, fontWeight: '700' },
+  page: { flex: 1 },
+  glossPanel: {
+    borderRadius: 26,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 18,
+    marginBottom: 14,
+    overflow: 'hidden',
+    // Colored, low-opacity elevation. On light backgrounds a neutral grey shadow
+    // reads as dirt, so the shadow borrows the brand hue.
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 5,
+  },
+  glossSheen: { borderTopLeftRadius: 26, borderTopRightRadius: 26 },
+  glossChip: {
+    minHeight: 30,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  glossChipText: { fontSize: 11, fontWeight: '600' },
+  gradientText: { fontWeight: '800', letterSpacing: -1 },
 });

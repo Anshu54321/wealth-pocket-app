@@ -4,7 +4,11 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { router } from 'expo-router';
-import { Page, Panel, SectionTitle, TransactionRow, money, ActionButton, IconButton, EmptyState } from '@/components/finance-ui';
+import { accentGradient, ActionButton, EmptyState, GlossPanel, IconButton, money, Page, SectionTitle, TransactionRow } from '@/components/finance-ui';
+
+// `Panel` is still used for the flat recent-activity list, where a gradient fill
+// would fight the row separators.
+import { Panel } from '@/components/finance-ui';
 import { CategoryReviewSheet, QuickAddSheet } from '@/components/QuickSheets';
 import { useFinance } from '@/context/FinanceContext';
 import { useColors } from '@/hooks/useColors';
@@ -12,7 +16,7 @@ import type { TransactionKind } from '@/lib/database';
 
 export default function HomeScreen() {
   const colors = useColors();
-  const { transactions, investments, debts, isReady, error, refresh, addTransaction, categorizeTransaction } = useFinance();
+  const { transactions, investments, debts, isReady, error, refresh, addTransaction, categorizeTransaction, unreadNotificationCount } = useFinance();
   const [showAdd, setShowAdd] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [hideBalance, setHideBalance] = useState(false);
@@ -38,47 +42,67 @@ export default function HomeScreen() {
     <Page
       title="Mira"
       subtitle={`${greeting} · your money, in view`}
-      right={<IconButton icon="settings" onPress={() => router.push('/(tabs)/settings')} accessibilityLabel="Settings" />}
+      right={
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={unreadNotificationCount > 0 ? `Alerts, ${unreadNotificationCount} unread` : 'Alerts'}
+            testID="home-open-notifications"
+            onPress={() => router.push('/(tabs)/notifications')}
+            style={({ pressed }) => [
+              styles.headerButton,
+              { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+            ]}
+          >
+            <Feather name="bell" size={17} color={colors.foreground} />
+            {unreadNotificationCount > 0 ? (
+              <View style={[styles.headerBadge, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.headerBadgeText, { color: colors.primaryForeground }]}>
+                  {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+          <IconButton icon="settings" onPress={() => router.push('/(tabs)/settings')} accessibilityLabel="Settings" />
+        </View>
+      }
     >
       <Animated.View entering={FadeInDown.duration(500).springify()}>
-        <LinearGradient
-          colors={[colors.subtleGreen, colors.card, colors.card]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.balanceCard, { borderColor: colors.border }]}
-        >
+        <GlossPanel intensity="vivid" accentIndex={0} style={styles.balanceCard}>
           <View style={styles.balanceTop}>
             <View>
-              <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>MONTHLY CASH FLOW</Text>
-              <Text style={[styles.balanceCaption, { color: colors.mutedForeground }]}>After spending, investing & lending</Text>
+              <Text style={[styles.balanceLabel, { color: colors.sheen }]}>MONTHLY CASH FLOW</Text>
+              <Text style={[styles.balanceCaption, { color: colors.sheen }]}>After spending, investing & lending</Text>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel={hideBalance ? 'Show amounts' : 'Hide amounts'} onPress={() => setHideBalance((value) => !value)}>
-              <Feather name={hideBalance ? 'eye-off' : 'eye'} size={18} color={colors.mutedForeground} />
+              <Feather name={hideBalance ? 'eye-off' : 'eye'} size={18} color={colors.primaryForeground} />
             </Pressable>
           </View>
-          <Text style={[styles.balanceAmount, { color: colors.foreground }]}>
+          <Text style={[styles.balanceAmount, { color: colors.primaryForeground }]}>
             {hideBalance ? '₹ ••••••' : money(liquid)}
           </Text>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceMetrics}>
             <View style={styles.balanceMetric}>
-              <View style={[styles.metricDot, { backgroundColor: colors.positive }]} />
+              <View style={[styles.metricDot, { backgroundColor: '#FFFFFF' }]} />
               <View>
-                <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Money in</Text>
-                <Text style={[styles.metricValue, { color: colors.foreground }]}>{hideBalance ? '••••' : money(income, true)}</Text>
+                <Text style={[styles.metricLabel, { color: colors.sheen }]}>Money in</Text>
+                <Text style={[styles.metricValue, { color: colors.primaryForeground }]}>{hideBalance ? '••••' : money(income, true)}</Text>
               </View>
             </View>
             <View style={styles.balanceMetric}>
-              <View style={[styles.metricDot, { backgroundColor: colors.accent }]} />
+              <View style={[styles.metricDot, { backgroundColor: colors.sheen }]} />
               <View>
-                <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Money out</Text>
-                <Text style={[styles.metricValue, { color: colors.foreground }]}>{hideBalance ? '••••' : money(expenses, true)}</Text>
+                <Text style={[styles.metricLabel, { color: colors.sheen }]}>Money out</Text>
+                <Text style={[styles.metricValue, { color: colors.primaryForeground }]}>{hideBalance ? '••••' : money(expenses, true)}</Text>
               </View>
             </View>
           </View>
-          <View style={[styles.balanceBloom, { borderColor: colors.accent }]} />
-          <View style={[styles.balanceBloomSmall, { borderColor: colors.primary }]} />
-        </LinearGradient>
+          {/* Decorative blooms sit behind the text, so they are pushed last and
+              stay non-interactive. */}
+          <View pointerEvents="none" style={[styles.balanceBloom, { borderColor: colors.sheen }]} />
+          <View pointerEvents="none" style={[styles.balanceBloomSmall, { borderColor: colors.primaryForeground }]} />
+        </GlossPanel>
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(90).duration(450)}>
@@ -138,27 +162,37 @@ export default function HomeScreen() {
           </Pressable>
         } />
         <View style={styles.wealthRow}>
-          <Panel style={styles.wealthCard}>
-            <View style={[styles.wealthIcon, { backgroundColor: colors.subtleGreen }]}>
-              <Feather name="trending-up" size={17} color={colors.primary} />
-            </View>
+          <GlossPanel style={styles.wealthCard}>
+            <LinearGradient
+              colors={accentGradient(colors, 0)}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.wealthIcon}
+            >
+              <Feather name="trending-up" size={17} color="#FFFFFF" />
+            </LinearGradient>
             <Text style={[styles.wealthValue, { color: colors.foreground }]}>{money(invested, true)}</Text>
             <Text style={[styles.wealthLabel, { color: colors.mutedForeground }]}>Invested</Text>
-          </Panel>
-          <Panel style={styles.wealthCard}>
-            <View style={[styles.wealthIcon, { backgroundColor: colors.secondary }]}>
-              <Feather name="book-open" size={17} color={colors.accent} />
-            </View>
+          </GlossPanel>
+          <GlossPanel style={styles.wealthCard}>
+            <LinearGradient
+              colors={accentGradient(colors, 1)}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.wealthIcon}
+            >
+              <Feather name="book-open" size={17} color="#FFFFFF" />
+            </LinearGradient>
             <Text style={[styles.wealthValue, { color: colors.foreground }]}>{money(lent, true)}</Text>
             <Text style={[styles.wealthLabel, { color: colors.mutedForeground }]}>Out on loan</Text>
-          </Panel>
+          </GlossPanel>
         </View>
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(260).duration(450)}>
         <SectionTitle title="Recent activity" trailing={
-          <Pressable accessibilityRole="button" onPress={() => router.push('/(tabs)/calendar')}>
-            <Text style={[styles.link, { color: colors.primary }]}>View all</Text>
+          <Pressable accessibilityRole="button" testID="home-open-segregated" onPress={() => router.push('/(tabs)/segregated')}>
+            <Text style={[styles.link, { color: colors.primary }]}>Split view</Text>
           </Pressable>
         } />
         <Panel style={styles.recentPanel}>
@@ -195,7 +229,11 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  balanceCard: { borderWidth: 1, overflow: 'hidden', borderRadius: 30, minHeight: 224, padding: 22, marginBottom: 14 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerButton: { width: 44, height: 44, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  headerBadge: { position: 'absolute', top: 5, right: 5, minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  headerBadgeText: { fontSize: 9, fontWeight: '700' },
+  balanceCard: { borderRadius: 30, minHeight: 224, padding: 22, marginBottom: 14 },
   balanceTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   balanceLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 1.4 },
   balanceCaption: { fontSize: 11, marginTop: 5 },
@@ -206,8 +244,10 @@ const styles = StyleSheet.create({
   metricDot: { width: 7, height: 7, borderRadius: 4 },
   metricLabel: { fontSize: 10 },
   metricValue: { fontSize: 14, fontWeight: '700', marginTop: 2 },
-  balanceBloom: { position: 'absolute', width: 140, height: 140, borderRadius: 70, borderWidth: 1, opacity: 0.13, right: -48, top: 38 },
-  balanceBloomSmall: { position: 'absolute', width: 88, height: 88, borderRadius: 44, borderWidth: 1, opacity: 0.18, right: -20, top: 63 },
+  // pointerEvents is set inline where these render so the decorative circles
+  // never swallow a tap meant for the balance figures above them.
+  balanceBloom: { position: 'absolute', width: 140, height: 140, borderRadius: 70, borderWidth: 1, opacity: 0.22, right: -48, top: 38 },
+  balanceBloomSmall: { position: 'absolute', width: 88, height: 88, borderRadius: 44, borderWidth: 1, opacity: 0.28, right: -20, top: 63 },
   quickActions: { flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: 12 },
   quickAction: { flex: 1.12, minHeight: 52, paddingHorizontal: 13, borderRadius: 17, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 7 },
   quickActionText: { fontSize: 12, fontWeight: '700' },

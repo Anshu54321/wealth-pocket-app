@@ -47,22 +47,9 @@ export default function SettingsScreen() {
   const [biometrics, setBiometrics] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationsGranted, setNotificationsGranted] = useState(false);
-  const handledResponse = useRef<string | null>(null);
   const currentClientId =
     Platform.OS === 'ios' ? iosClientId : Platform.OS === 'android' ? androidClientId : webClientId;
   const needsOAuthSetup = !currentClientId;
-  const [request, response, promptAsync] = Google.useAuthRequest(
-    {
-      iosClientId,
-      androidClientId,
-      webClientId,
-      responseType: AuthSession.ResponseType.Code,
-      shouldAutoExchangeCode: Platform.OS !== 'web',
-      scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
-      extraParams: { access_type: 'online', prompt: 'consent' },
-    },
-    { scheme: 'wealth-pocket' },
-  );
 
   useEffect(() => {
     let mounted = true;
@@ -82,60 +69,14 @@ export default function SettingsScreen() {
     return () => { mounted = false; };
   }, []);
 
-  useEffect(() => {
-    if (!response || (response.type !== 'success' && response.type !== 'error')) return;
-    if (response.type === 'error') {
-      Alert.alert('Google connection did not finish', response.error?.message ?? response.params.error_description ?? 'Return to Mira and try again.');
-      return;
-    }
-    const responseKey = response.params.code ?? response.params.access_token ?? response.params.error ?? JSON.stringify(response.params);
-    if (handledResponse.current === responseKey) return;
-    handledResponse.current = responseKey;
-    void (async () => {
-      try {
-        let authentication = response.authentication;
-        if (!authentication?.accessToken && response.params.code && request && currentClientId) {
-          authentication = await AuthSession.exchangeCodeAsync(
-            {
-              clientId: currentClientId,
-              code: response.params.code,
-              redirectUri: request.redirectUri,
-              extraParams: { code_verifier: request.codeVerifier ?? '' },
-            },
-            Google.discovery,
-          );
-        }
-        const token = authentication?.accessToken;
-        if (!token) {
-          Alert.alert('Google connection did not finish', 'Return to Mira and try connecting again.');
-          return;
-        }
-        const expiresIn = Math.max(0, authentication?.expiresIn ?? 3600);
-        const expiresAt = Date.now() + expiresIn * 1000;
-        await storeGmailToken(token, expiresAt);
-        setGoogleConnected(true);
-        setGoogleExpiry(expiresAt);
-        Alert.alert('Google connected', 'Mira can now read recent transaction-alert emails only.');
-      } catch {
-        Alert.alert('Google connection could not be saved', 'Check your OAuth client setup and try connecting again.');
-      }
-    })();
-  }, [response, request, currentClientId]);
-
-  const connectGoogle = async () => {
-    if (needsOAuthSetup) {
-      Alert.alert(
-        'Google OAuth needs setup',
-        'Create an OAuth client for this app in Google Cloud, enable the Gmail API, and add the EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID, or EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID value for this platform. Client IDs are public identifiers, not client secrets.',
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Open Google Cloud', onPress: () => void Linking.openURL('https://console.cloud.google.com/apis/credentials') },
-        ],
-      );
-      return;
-    }
-    await promptAsync();
-  };
+  const connectGoogle = () => Alert.alert(
+    'Google OAuth needs setup',
+    'Create an OAuth client for this app in Google Cloud, enable the Gmail API, and add the EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID, or EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID value for this platform. Client IDs are public identifiers, not client secrets.',
+    [
+      { text: 'Not now', style: 'cancel' },
+      { text: 'Open Google Cloud', onPress: () => void Linking.openURL('https://console.cloud.google.com/apis/credentials') },
+    ],
+  );
 
   const syncGmail = async () => {
     const stored = await readGmailToken().catch(() => null);
@@ -284,13 +225,20 @@ export default function SettingsScreen() {
               <Feather name="log-out" size={16} color={colors.mutedForeground} />
             </Pressable>
           </View>
-        ) : (
+        ) : needsOAuthSetup ? (
           <ActionButton
-            title={needsOAuthSetup ? 'Set up Google OAuth' : 'Continue with Google'}
+            title="Set up Google OAuth"
             icon="arrow-up-right"
-            onPress={() => void connectGoogle()}
-            disabled={!!currentClientId && !request}
+            onPress={connectGoogle}
             testID="connect-google"
+          />
+        ) : (
+          <GoogleAuthButton
+            clientId={currentClientId}
+            onConnected={(expiresAt) => {
+              setGoogleConnected(true);
+              setGoogleExpiry(expiresAt);
+            }}
           />
         )}
         <View style={styles.scopeRow}>
@@ -334,6 +282,79 @@ export default function SettingsScreen() {
       </Panel>
       <Text style={[styles.versionLabel, { color: colors.mutedForeground }]}>MIRA · PERSONAL FINANCE · INR</Text>
     </Page>
+  );
+}
+
+function GoogleAuthButton({
+  clientId,
+  onConnected,
+}: {
+  clientId: string;
+  onConnected: (expiresAt: number) => void;
+}) {
+  const handledResponse = useRef<string | null>(null);
+  const clientConfig = Platform.OS === 'ios'
+    ? { iosClientId: clientId }
+    : Platform.OS === 'android'
+      ? { androidClientId: clientId }
+      : { webClientId: clientId };
+  const [request, response, promptAsync] = Google.useAuthRequest(
+    {
+      ...clientConfig,
+      responseType: AuthSession.ResponseType.Code,
+      shouldAutoExchangeCode: Platform.OS !== 'web',
+      scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+      extraParams: { access_type: 'online', prompt: 'consent' },
+    },
+    { scheme: 'wealth-pocket' },
+  );
+
+  useEffect(() => {
+    if (!response || (response.type !== 'success' && response.type !== 'error')) return;
+    const responseKey = response.params.code ?? response.params.access_token ?? response.params.error ?? JSON.stringify(response.params);
+    if (handledResponse.current === responseKey) return;
+    handledResponse.current = responseKey;
+    if (response.type === 'error') {
+      Alert.alert('Google connection did not finish', response.error?.message ?? response.params.error_description ?? 'Return to Mira and try again.');
+      return;
+    }
+    void (async () => {
+      try {
+        let authentication = response.authentication;
+        if (!authentication?.accessToken && response.params.code && request) {
+          authentication = await AuthSession.exchangeCodeAsync(
+            {
+              clientId,
+              code: response.params.code,
+              redirectUri: request.redirectUri,
+              extraParams: { code_verifier: request.codeVerifier ?? '' },
+            },
+            Google.discovery,
+          );
+        }
+        const token = authentication?.accessToken;
+        if (!token) {
+          Alert.alert('Google connection did not finish', 'Return to Mira and try connecting again.');
+          return;
+        }
+        const expiresAt = Date.now() + Math.max(0, authentication?.expiresIn ?? 3600) * 1000;
+        await storeGmailToken(token, expiresAt);
+        onConnected(expiresAt);
+        Alert.alert('Google connected', 'Mira can now read recent transaction-alert emails only.');
+      } catch {
+        Alert.alert('Google connection could not be saved', 'Check your OAuth client setup and try connecting again.');
+      }
+    })();
+  }, [response, request, clientId, onConnected]);
+
+  return (
+    <ActionButton
+      title="Continue with Google"
+      icon="arrow-up-right"
+      onPress={() => void promptAsync()}
+      disabled={!request}
+      testID="connect-google"
+    />
   );
 }
 

@@ -40,15 +40,17 @@ export function shortDate(timestamp: number): string {
 
 export function categoryIcon(category: string): keyof typeof Feather.glyphMap {
   const key = category.toLowerCase();
-  if (/food|dining|restaurant/.test(key)) return 'coffee';
-  if (/transport|travel|fuel/.test(key)) return 'truck';
+  if (/food|dining|restaurant|cafe|coffee/.test(key)) return 'coffee';
+  if (/grocer|supermarket/.test(key)) return 'shopping-cart';
+  if (/transport|travel|fuel|taxi|rideshare|flight/.test(key)) return 'truck';
+  if (/bill|utility|rent|housing|internet|electric|water/.test(key)) return 'file-text';
   if (/shop|retail/.test(key)) return 'shopping-bag';
-  if (/bill|utility/.test(key)) return 'file-text';
-  if (/invest|mutual|stock|insurance|emergency/.test(key)) return 'trending-up';
-  if (/grocer/.test(key)) return 'shopping-cart';
-  if (/health|medical/.test(key)) return 'heart';
-  if (/income|salary|lending|repayment/.test(key)) return 'arrow-down-left';
-  return 'circle';
+  if (/health|medical|pharmacy|doctor/.test(key)) return 'heart';
+  if (/entertain|movie|cinema|music|streaming/.test(key)) return 'film';
+  if (/education|course|school|book/.test(key)) return 'book-open';
+  if (/income|salary|business|interest|lending|repayment|refund/.test(key)) return 'arrow-down-left';
+  if (/invest|mutual|stock|insurance|emergency|sip/.test(key)) return 'trending-up';
+  return 'tag';
 }
 
 export function Page({
@@ -192,10 +194,12 @@ export function ActionButton({
 
 export function Tag({
   children,
+  icon,
   selected = false,
   onPress,
 }: {
   children: ReactNode;
+  icon?: keyof typeof Feather.glyphMap;
   selected?: boolean;
   onPress?: () => void;
 }) {
@@ -210,6 +214,7 @@ export function Tag({
         },
       ]}
     >
+      {icon ? <Feather name={icon} size={12} color={selected ? colors.primary : colors.mutedForeground} /> : null}
       <Text style={[styles.tagText, { color: selected ? colors.primary : colors.mutedForeground }]}>
         {children}
       </Text>
@@ -304,7 +309,7 @@ const styles = StyleSheet.create({
   iconButton: { justifyContent: 'center', alignItems: 'center' },
   actionButton: { minHeight: 48, paddingHorizontal: 18, borderRadius: 16, flexDirection: 'row', gap: 9, justifyContent: 'center', alignItems: 'center' },
   actionText: { fontSize: 14, fontWeight: '700' },
-  tag: { minHeight: 31, paddingHorizontal: 11, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  tag: { minHeight: 31, paddingHorizontal: 11, borderRadius: 20, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   tagText: { fontSize: 11, fontWeight: '600' },
   emptyState: { alignItems: 'center', paddingVertical: 28, paddingHorizontal: 20, gap: 9 },
   emptyIcon: { width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 3 },

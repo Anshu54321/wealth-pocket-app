@@ -57,7 +57,7 @@ export async function requestReminderPermission(): Promise<boolean> {
       name: 'Finance reminders',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 180, 120, 180],
-      lightColor: '#D9BE82',
+      lightColor: '#3AD5C6',
     });
   }
   return true;

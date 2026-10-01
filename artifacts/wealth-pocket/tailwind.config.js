@@ -6,9 +6,9 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        forest: '#07110D',
-        sage: '#B5D58B',
-        champagne: '#D9BE82',
+        midnight: '#07131E',
+        teal: '#3AD5C6',
+        coral: '#F3A97A',
       },
     },
   },

@@ -14,7 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useColors } from '@/hooks/useColors';
 import type { TransactionInput, TransactionKind, TransactionRecord } from '@/lib/database';
-import { ActionButton, Tag, toMinor } from './finance-ui';
+import { ActionButton, Tag, categoryIcon, toMinor } from './finance-ui';
 
 const expenseCategories = [
   'Food & dining', 'Groceries', 'Transport', 'Bills', 'Shopping', 'Health', 'Entertainment', 'Other',
@@ -156,7 +156,7 @@ export function QuickAddSheet({
           </Text>
           <View style={styles.tagWrap}>
             {categories.map((item) => (
-              <Tag key={item} selected={category === item} onPress={() => setCategory(item)}>{item}</Tag>
+              <Tag key={item} icon={categoryIcon(item)} selected={category === item} onPress={() => setCategory(item)}>{item}</Tag>
             ))}
           </View>
 
@@ -242,6 +242,7 @@ export function CategoryReviewSheet({
                       }}
                       style={[styles.reviewChoice, { backgroundColor: colors.secondary }]}
                     >
+                      <Feather name={categoryIcon(choice)} size={12} color={colors.primary} />
                       <Text style={[styles.reviewChoiceText, { color: colors.foreground }]}>{choice}</Text>
                     </Pressable>
                   ))}
@@ -258,6 +259,7 @@ export function CategoryReviewSheet({
                     }}
                     style={[styles.reviewChoice, { backgroundColor: colors.secondary }]}
                   >
+                    <Feather name={categoryIcon('Other')} size={12} color={colors.primary} />
                     <Text style={[styles.reviewChoiceText, { color: colors.foreground }]}>Other</Text>
                   </Pressable>
                 </View>
@@ -292,6 +294,6 @@ const styles = StyleSheet.create({
   reviewMerchant: { fontSize: 14, fontWeight: '700' },
   reviewAmount: { fontSize: 12, marginTop: 4 },
   reviewChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  reviewChoice: { borderRadius: 14, paddingVertical: 8, paddingHorizontal: 10 },
+  reviewChoice: { borderRadius: 14, paddingVertical: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
   reviewChoiceText: { fontSize: 10, fontWeight: '600' },
 });

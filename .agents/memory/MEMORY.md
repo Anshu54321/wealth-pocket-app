@@ -1,0 +1,1 @@
+- [pnpm artifact dependencies](pnpm-artifact-dependencies.md) — generic installs can target the workspace root; scope additions to the owning package.

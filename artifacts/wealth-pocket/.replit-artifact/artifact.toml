@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/wealth-pocket/"
+title = "Mira — Personal Finance"
+description = "A secure, offline-first personal finance and wealth companion for Android and iOS with transaction tracking, investments, lending, analytics, reminders, and user-authorized Gmail import."
+version = "1.0.0"
+id = "artifacts/wealth-pocket"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/wealth-pocket/" ]
+localPort = 20763
+
+[services.development]
+run = "pnpm --filter @workspace/wealth-pocket run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/wealth-pocket", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/wealth-pocket", "run", "serve" ]
+
+[services.env]
+PORT = "20763"
+BASE_PATH = "/wealth-pocket/"
